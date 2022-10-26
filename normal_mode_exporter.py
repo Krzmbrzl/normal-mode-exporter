@@ -54,8 +54,9 @@ def main():
     parser.add_argument("--input", "-i", help="Path to the input file or directory", metavar="PATH", required=True)
     parser.add_argument("--output", "-o", help="Path to the output directory", metavar="PATH", required=True)
     parser.add_argument("--input-format", help="Specify the format of the provided input", choices=["auto", "turbomole"], default="auto")
-    parser.add_argument("--step-size", help="The step size to use for animations", type=float, default=0.05)
-    parser.add_argument("--displacement-scaling", help="Scaling factor to apply to displacement vectors during animation", type=float, default=2)
+    parser.add_argument("--step-size", help="The step size to use for animations", type=float, default=0.05, metavar="SIZE")
+    parser.add_argument("--displacement-scaling", help="Scaling factor to apply to displacement vectors during animation", type=float, default=2,
+        metavar="FACTOR")
 
     args = parser.parse_args()
 
