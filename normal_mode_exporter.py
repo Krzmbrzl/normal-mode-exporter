@@ -13,21 +13,22 @@ import argparse
 import os
 import sys
 import re
+from dataclasses import dataclass, field
 
 
+# From https://physics.nist.gov/cgi-bin/cuu/Value?bohrrada0
+bohrToAng = 0.529177210903
+
+
+@dataclass
 class Atom:
-    def __init__(self, element:str, coordinates: List[float]):
-        element = element.strip()
-        assert len(coordinates) == 3
-        assert(element != "")
-
-        self.element = element
-        self.coordinates = coordinates
+    element: str
+    coordinates: Tuple[float, float, float]
 
 
+@dataclass
 class Molecule:
-    def __init__(self, atoms: List[Atom] = []):
-        self.atoms = atoms
+    atoms: List[Atom] = field(default_factory=list)
 
     def geometry(self) -> List[List[float]]:
         geometry = []
@@ -70,7 +71,7 @@ def main():
     parser.add_argument(
         "--input-format",
         help="Specify the format of the provided input",
-        choices=["auto", "turbomole"],
+        choices=["auto", "turbomole", "molpro"],
         default="auto",
     )
     parser.add_argument(
@@ -101,6 +102,8 @@ def main():
 
     if args.input_format == "turbomole":
         molecule, normal_modes = process_turbomole_input(args.input)
+    elif args.input_format == "molpro":
+        molecule, normal_modes = process_molpro_input(args.input)
     else:
         error('Unknown format "%s"' % args.input_format)
 
@@ -147,6 +150,10 @@ def detect_input_format(input_path: str, input_format: str) -> str:
         if os.path.exists(os.path.join(input_path, "control")):
             # Presence of a control file indicates that TurboMole was used
             return "turbomole"
+
+    if os.path.isfile(input_path):
+        if "PROGRAM SYSTEM MOLPRO" in open(input_path, "r").read():
+            return "molpro"
 
     # At this point we only support TurboMole inputs, so if we don't detect that,
     # we can't auto-detect the format.
@@ -295,7 +302,7 @@ def process_turbomole_input(input_path: str) -> Tuple[Molecule, List[NormalMode]
 
     # The normal mode displacements first list the x-displacement for the first atom in the molecule for every mode, then the y-coordinate,
     # then z and then move on to the second atom and so on
-    displacement_vectors = []
+    displacement_vectors: List[List[Tuple[float, float, float]]] = []
     i = 0
     while i < len(displacements):
         cartesian_idx = i % 3
@@ -305,14 +312,21 @@ def process_turbomole_input(input_path: str) -> Tuple[Molecule, List[NormalMode]
         if len(displacement_vectors) == mode_idx:
             displacement_vectors.append([])
         if len(displacement_vectors[mode_idx]) == atom_idx:
-            displacement_vectors[mode_idx].append([0, 0, 0])
+            displacement_vectors[mode_idx].append((0, 0, 0))
 
         # print(i)
         # print("Mode ", mode_idx)
         # print("Atom ", atom_idx)
         # print("Coord ", cartesian_idx)
 
-        displacement_vectors[mode_idx][atom_idx][cartesian_idx] = displacements[i]
+        # Update component in Tuple
+        displacement = list(displacement_vectors[mode_idx][atom_idx])
+        displacement[cartesian_idx] = displacements[i]
+        displacement_vectors[mode_idx][atom_idx] = (
+            displacement[0],
+            displacement[1],
+            displacement[2],
+        )
 
         i += 1
 
@@ -331,6 +345,99 @@ def process_turbomole_input(input_path: str) -> Tuple[Molecule, List[NormalMode]
 
     return molecule, normal_modes
 
+
+def process_molpro_input(input_path: str) -> Tuple[Molecule, List[NormalMode]]:
+    """Reads the necessary input from the provided Molpro output file"""
+
+    if not os.path.isfile(input_path):
+        error(f"Molpro format expects an input _file_, but '{input_path}' isn't one")
+
+    contents = open(input_path, "r").read()
+
+    contents = contents[
+        contents.index("ATOMIC COORDINATES") + len("ATOMIC COORDINATES") :
+    ]
+    contents = contents[contents.index("Z") + 1 :].strip()
+
+    geometry = contents[: contents.index("Bond lengths")].strip()
+
+    contents = contents[contents.index("PROGRAM * FREQUENCIES") :]
+    contents = contents[
+        : contents.index("*******************************************************")
+    ].strip()
+
+    vibs = contents[contents.index("Normal Modes") + len("Normal Modes") :].strip()
+
+    atoms = []
+    for line in geometry.split("\n"):
+        components = line.split()
+        assert len(components) == 6
+
+        # Strip away numbering
+        element = components[1]
+        element = "".join([x for x in element if x.isalpha()])
+
+        atoms.append(
+            Atom(
+                element=element,
+                coordinates=(
+                    float(components[3]) * bohrToAng,
+                    float(components[4]) * bohrToAng,
+                    float(components[5]) * bohrToAng,
+                ),
+            )
+        )
+
+    molecule = Molecule(atoms=atoms)
+    modes = []
+
+    while "Wavenumbers [cm-1]" in vibs:
+        vibs = vibs[vibs.index("Wavenumbers [cm-1]") :]
+
+        current = vibs[: vibs.index("\n\n")].strip()
+        vibs = vibs[len(current) :].strip()
+
+        lines = current.split("\n")
+        # frequency, intensity (abs), intensity (rel) + 3 coordinates per atom
+        assert len(lines) == 3 + len(molecule.atoms) * 3
+
+        line_components = [x.split() for x in lines]
+        for i in range(len(line_components)):
+            # Remove legend
+            line_components[i].pop(0)
+
+            if i < 3:
+                # For header lines also remove unit
+                line_components[i].pop(0)
+
+        n_vibs = len(line_components[0])
+
+        for i in range(n_vibs):
+            freq = complex(line_components[0][i])
+            # We read the relative intensity
+            intensity = float(line_components[2][i])
+
+            displacement: List[Tuple[float, float, float]] = []
+            for k in range(len(molecule.atoms)):
+                assert len(line_components[k]) == n_vibs
+                line = 3 + 3 * k
+                displacement.append(
+                    (
+                        float(line_components[line][i]),
+                        float(line_components[line + 1][i]),
+                        float(line_components[line + 2][i]),
+                    )
+                )
+
+            modes.append(
+                NormalMode(
+                    displacement_vec=displacement, frequency=freq, intensity=intensity
+                )
+            )
+
+    assert len(modes) == 3 * len(molecule.atoms)
+
+    return molecule, modes
 
 
 def parse_xyz(

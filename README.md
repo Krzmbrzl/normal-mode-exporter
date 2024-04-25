@@ -3,7 +3,8 @@
 Python utility for exporting normal modes from quantum chemistry application output to more easily interpretable formats.
 
 Currently supported input formats:
-- [TurboMole](https://www.turbomole.org/) calculation directory (the one containing the `control` file
+- [TurboMole](https://www.turbomole.org/) calculation directory (the one containing the `control` file)
+- [Molpro](https://www.molpro.net/) output file
 
 From the obtained data, the program will export
 - The equilibrium geometry as a XYZ file
