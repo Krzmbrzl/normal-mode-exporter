@@ -38,25 +38,55 @@ class Molecule:
         return geometry
 
 
+@dataclass
 class NormalMode:
-    def __init__(self, displacement_vec: List[List[float]], frequency: float, intensity: float, symmetry: str, ir_active: bool, raman_active: bool):
-        self.displacement_vec = displacement_vec
-        self.frequency = frequency
-        self.intensity = intensity
-        self.symmetry = symmetry
-        self.ir_active = ir_active
-        self.raman_active = raman_active
+    displacement_vec: List[Tuple[float, float, float]]
+    frequency: complex
+    intensity: float
+    symmetry: Optional[str] = None
+    ir_active: Optional[bool] = None
+    raman_active: Optional[bool] = None
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Export vibrational normal modes to easily accessible formats")
+    parser = argparse.ArgumentParser(
+        description="Export vibrational normal modes to easily accessible formats"
+    )
 
-    parser.add_argument("--input", "-i", help="Path to the input file or directory", metavar="PATH", required=True)
-    parser.add_argument("--output", "-o", help="Path to the output directory", metavar="PATH", required=True)
-    parser.add_argument("--input-format", help="Specify the format of the provided input", choices=["auto", "turbomole"], default="auto")
-    parser.add_argument("--step-size", help="The step size to use for animations", type=float, default=0.05, metavar="SIZE")
-    parser.add_argument("--displacement-scaling", help="Scaling factor to apply to displacement vectors during animation", type=float, default=2,
-        metavar="FACTOR")
+    parser.add_argument(
+        "--input",
+        "-i",
+        help="Path to the input file or directory",
+        metavar="PATH",
+        required=True,
+    )
+    parser.add_argument(
+        "--output",
+        "-o",
+        help="Path to the output directory",
+        metavar="PATH",
+        required=True,
+    )
+    parser.add_argument(
+        "--input-format",
+        help="Specify the format of the provided input",
+        choices=["auto", "turbomole"],
+        default="auto",
+    )
+    parser.add_argument(
+        "--step-size",
+        help="The step size to use for animations",
+        type=float,
+        default=0.05,
+        metavar="SIZE",
+    )
+    parser.add_argument(
+        "--displacement-scaling",
+        help="Scaling factor to apply to displacement vectors during animation",
+        type=float,
+        default=2,
+        metavar="FACTOR",
+    )
 
     args = parser.parse_args()
 
@@ -65,14 +95,22 @@ def main():
     args.output = os.path.realpath(args.output)
 
     initialize_io(input_path=args.input, output_path=args.output)
-    args.input_format = detect_input_format(input_path=args.input, input_format=args.input_format)
+    args.input_format = detect_input_format(
+        input_path=args.input, input_format=args.input_format
+    )
 
     if args.input_format == "turbomole":
         molecule, normal_modes = process_turbomole_input(args.input)
     else:
-        error("Unknown format \"%s\"" % args.input_format)
+        error('Unknown format "%s"' % args.input_format)
 
-    export(args.output, molecule=molecule, normal_modes=normal_modes, step_size=args.step_size, scaling_factor=args.displacement_scaling)
+    export(
+        args.output,
+        molecule=molecule,
+        normal_modes=normal_modes,
+        step_size=args.step_size,
+        scaling_factor=args.displacement_scaling,
+    )
 
 
 def error(msg: str, exit_code: int = 1):
@@ -86,11 +124,11 @@ def initialize_io(input_path: str, output_path: str):
     """Initialize the input and output paths. Performs basic verification and potentially creates output directory"""
 
     if not os.path.exists(input_path):
-        error("Provided input path \"%s\" does not exist" % input_path)
+        error('Provided input path "%s" does not exist' % input_path)
 
     if os.path.exists(output_path):
         if not os.path.isdir(output_path):
-            error("Provided output path \"%s\" is not a directory" % output_path)
+            error('Provided output path "%s" is not a directory' % output_path)
     else:
         # Create output directory
         os.makedirs(output_path)
@@ -119,9 +157,14 @@ def process_turbomole_input(input_path: str) -> Tuple[Molecule, List[NormalMode]
     """Reads the necessary input from the provided TurboMole calculation directory"""
 
     if os.path.isfile(input_path):
-        error("TurboMole format expects an input _directory_, but was provided with a file: \"%s\"" % input_path)
+        error(
+            'TurboMole format expects an input _directory_, but was provided with a file: "%s"'
+            % input_path
+        )
 
-    control_file_lines = open(os.path.join(input_path, "control"), "r").read().split("\n")
+    control_file_lines = (
+        open(os.path.join(input_path, "control"), "r").read().split("\n")
+    )
     coordinate_content = ""
     normal_mode_content = ""
     vib_spectrum_content = ""
@@ -130,15 +173,27 @@ def process_turbomole_input(input_path: str) -> Tuple[Molecule, List[NormalMode]
     i = 0
     while i < len(control_file_lines):
         current_line = control_file_lines[i]
-        if current_line.strip() == "$coord" or current_line.strip().startswith("$coord "):
+        if current_line.strip() == "$coord" or current_line.strip().startswith(
+            "$coord "
+        ):
             if "file=" in current_line:
                 # Coordinates given as external file
-                coordinate_content = open(os.path.join(input_path, current_line[current_line.find("file=") + len("file=") : ].strip()),"r").read()
+                coordinate_content = open(
+                    os.path.join(
+                        input_path,
+                        current_line[
+                            current_line.find("file=") + len("file=") :
+                        ].strip(),
+                    ),
+                    "r",
+                ).read()
                 coordinate_content = coordinate_content.replace("$coord", "")
 
                 # Git rid of any additional info in the coord file (e.g. internal coordinates)
                 if "$" in coordinate_content:
-                    coordinate_content = coordinate_content[ : coordinate_content.find("$")]
+                    coordinate_content = coordinate_content[
+                        : coordinate_content.find("$")
+                    ]
 
                 coordinate_content = coordinate_content.strip()
             else:
@@ -152,18 +207,36 @@ def process_turbomole_input(input_path: str) -> Tuple[Molecule, List[NormalMode]
             if not "file=" in current_line:
                 error("Expected normal modes to be given in an external file")
 
-            normal_mode_content = open(os.path.join(input_path, current_line[current_line.find("file=") + len("file=") : ].strip()), "r").read()
-            normal_mode_content = normal_mode_content.replace("$vibrational normal modes", "").replace("$end", "").strip()
+            normal_mode_content = open(
+                os.path.join(
+                    input_path,
+                    current_line[current_line.find("file=") + len("file=") :].strip(),
+                ),
+                "r",
+            ).read()
+            normal_mode_content = (
+                normal_mode_content.replace("$vibrational normal modes", "")
+                .replace("$end", "")
+                .strip()
+            )
         elif current_line.strip().startswith("$vibrational spectrum"):
             if not "file=" in current_line:
                 error("Expected vibrational spectrum to be given in an external file")
 
-            vib_spectrum_content = open(os.path.join(input_path, current_line[current_line.find("file=") + len("file=") : ].strip())).read()
-            vib_spectrum_content = vib_spectrum_content.replace("$vibrational spectrum", "").replace("$end", "")
-            vib_spectrum_content = re.sub(r"^#.*\n", "", vib_spectrum_content, flags=re.MULTILINE).strip()
+            vib_spectrum_content = open(
+                os.path.join(
+                    input_path,
+                    current_line[current_line.find("file=") + len("file=") :].strip(),
+                )
+            ).read()
+            vib_spectrum_content = vib_spectrum_content.replace(
+                "$vibrational spectrum", ""
+            ).replace("$end", "")
+            vib_spectrum_content = re.sub(
+                r"^#.*\n", "", vib_spectrum_content, flags=re.MULTILINE
+            ).strip()
 
         i += 1
-
 
     if normal_mode_content == "":
         error("Unable to find TurboMole's normal modes")
@@ -183,7 +256,15 @@ def process_turbomole_input(input_path: str) -> Tuple[Molecule, List[NormalMode]
             # Translations/rotations don't have a symmetry spec -> add a dummy one
             elements.insert(1, "-")
         assert len(elements) == 6
-        vib_info_lines.append([elements[1], float(elements[2]), float(elements[3]), elements[4].lower() == "yes", elements[5].lower() == "yes"])
+        vib_info_lines.append(
+            [
+                elements[1],
+                float(elements[2]),
+                float(elements[3]),
+                elements[4].lower() == "yes",
+                elements[5].lower() == "yes",
+            ]
+        )
 
     symmetry_idx = 0
     frequency_idx = 1
@@ -207,7 +288,10 @@ def process_turbomole_input(input_path: str) -> Tuple[Molecule, List[NormalMode]
     # We expect to read 3 displacements per atom in the molecule (3 cartesian coordinates) times the number
     # of normal modes, which is obtained via len(vib_info_lines)
     if not len(displacements) == len(molecule.atoms) * 3 * len(vib_info_lines):
-        error("Expected to read %d displacements, but got %d" % (len(molecule.atoms) * 3 * len(vib_info_lines), len(displacements)))
+        error(
+            "Expected to read %d displacements, but got %d"
+            % (len(molecule.atoms) * 3 * len(vib_info_lines), len(displacements))
+        )
 
     # The normal mode displacements first list the x-displacement for the first atom in the molecule for every mode, then the y-coordinate,
     # then z and then move on to the second atom and so on
@@ -234,15 +318,24 @@ def process_turbomole_input(input_path: str) -> Tuple[Molecule, List[NormalMode]
 
     normal_modes = []
     for i in range(len(vib_info_lines)):
-        normal_modes.append(NormalMode(displacement_vec=displacement_vectors[i], frequency=vib_info_lines[i][frequency_idx],
-        intensity=vib_info_lines[i][intensity_idx], symmetry=vib_info_lines[i][symmetry_idx], ir_active=vib_info_lines[i][ir_idx],
-        raman_active=vib_info_lines[i][raman_idx]))
+        normal_modes.append(
+            NormalMode(
+                displacement_vec=displacement_vectors[i],
+                frequency=vib_info_lines[i][frequency_idx],
+                intensity=vib_info_lines[i][intensity_idx],
+                symmetry=vib_info_lines[i][symmetry_idx],
+                ir_active=vib_info_lines[i][ir_idx],
+                raman_active=vib_info_lines[i][raman_idx],
+            )
+        )
 
     return molecule, normal_modes
 
 
 
-def parse_xyz(content: str, element_col: int = 0, convert_bohr_to_ang: bool = False) -> Molecule:
+def parse_xyz(
+    content: str, element_col: int = 0, convert_bohr_to_ang: bool = False
+) -> Molecule:
     """Parses a Molecule object from a XYZ(-ish)-formatted input"""
     assert element_col < 4
 
@@ -264,15 +357,34 @@ def parse_xyz(content: str, element_col: int = 0, convert_bohr_to_ang: bool = Fa
 
         assert len(parts) == 4
 
-        molecule.atoms.append(Atom(element=parts[element_col], coordinates=[float(parts[x_col]), float(parts[y_col]), float(parts[z_col])]))
+        molecule.atoms.append(
+            Atom(
+                element=parts[element_col],
+                coordinates=(
+                    float(parts[x_col]),
+                    float(parts[y_col]),
+                    float(parts[z_col]),
+                ),
+            )
+        )
 
         if convert_bohr_to_ang:
-            molecule.atoms[-1].coordinates = [element * 0.52918 for element in molecule.atoms[-1].coordinates]
+            converted = [
+                element * bohrToAng for element in molecule.atoms[-1].coordinates
+            ]
+            assert len(converted) == 3
+            molecule.atoms[-1].coordinates = (converted[0], converted[1], converted[2])
 
     return molecule
 
 
-def export(output_path: str, molecule: Molecule, normal_modes: List[NormalMode], step_size: float = 0.05, scaling_factor: float = 2):
+def export(
+    output_path: str,
+    molecule: Molecule,
+    normal_modes: List[NormalMode],
+    step_size: float = 0.05,
+    scaling_factor: float = 2,
+):
     """Exports the provided data into the output directory"""
     # Export static
     with open(os.path.join(output_path, "equilibrium_structure.xyz"), "w") as out_file:
@@ -284,30 +396,77 @@ def export(output_path: str, molecule: Molecule, normal_modes: List[NormalMode],
         current_mode = normal_modes[i]
 
         # Export displacement vector for every mode
-        with open(os.path.join(output_path, "mode_%05d.displacement" % (i + 1)), "w") as output_file:
+        with open(
+            os.path.join(output_path, "mode_%05d.displacement" % (i + 1)), "w"
+        ) as output_file:
             output_file.write("# Mode %d\n" % (i + 1))
-            output_file.write("# freq=%.2fcm^{-1}, sym=%s, intensity=%.4f, IR: %s, Raman: %s\n" % (current_mode.frequency, current_mode.symmetry,
-                current_mode.intensity, current_mode.ir_active, current_mode.raman_active))
+            if current_mode.frequency.imag == 0:
+                output_file.write(f"# freq={current_mode.frequency.real:.2f}cm^{-1}")
+            else:
+                assert current_mode.frequency.real == 0
+                output_file.write(
+                    f"# imaginary freq=i*{current_mode.frequency.imag:.2f}"
+                )
+
+            output_file.write(f", intensity={current_mode.intensity:.4f}")
+
+            if current_mode.symmetry is not None:
+                output_file.write(f", sym={current_mode.symmetry}")
+
+            if current_mode.ir_active is not None:
+                output_file.write(f", IR: {current_mode.ir_active}")
+
+            if current_mode.raman_active is not None:
+                output_file.write(f", Raman: {current_mode.raman_active}")
+
+            output_file.write("\n")
+
             write_displacement(output_file, molecule, current_mode.displacement_vec)
 
-
         # Export animation in form of an XYZ file that contains multiple snapshots along the vibration
-        with open(os.path.join(output_path, "mode_%05d.xyz" % (i + 1)), "w") as output_file:
+        with open(
+            os.path.join(output_path, "mode_%05d.xyz" % (i + 1)), "w"
+        ) as output_file:
             for k in range(-steps, steps + 1):
                 factor = scaling_factor * step_size * k
 
-                comment = "  Elongated along mode %d by a factor of %.6f" % (i + 1, factor)
-                write_xyz(output_file, molecule, comment=comment, displacement=current_mode.displacement_vec, displacement_factor=factor)
+                comment = "  Elongated along mode %d by a factor of %.6f" % (
+                    i + 1,
+                    factor,
+                )
+                write_xyz(
+                    output_file,
+                    molecule,
+                    comment=comment,
+                    displacement=current_mode.displacement_vec,
+                    displacement_factor=factor,
+                )
 
 
-def write_displacement(stream: TextIO, molecule: Molecule, displacement: List[List[float]]):
+def write_displacement(
+    stream: TextIO, molecule: Molecule, displacement: List[Tuple[float, float, float]]
+):
     """Write the given displacement into the given stream/file. The molecule object is needed to provide element names"""
 
     for i in range(len(displacement)):
-        stream.write("%s %4.8f %4.8f %4.8f\n" % (molecule.atoms[i].element, displacement[i][0], displacement[i][1], displacement[i][2]))
+        stream.write(
+            "%s %4.8f %4.8f %4.8f\n"
+            % (
+                molecule.atoms[i].element,
+                displacement[i][0],
+                displacement[i][1],
+                displacement[i][2],
+            )
+        )
 
 
-def write_xyz(stream: TextIO, molecule: Molecule, displacement: Optional[List[List[float]]] = None, displacement_factor: float = 1, comment: str=""):
+def write_xyz(
+    stream: TextIO,
+    molecule: Molecule,
+    displacement: Optional[List[Tuple[float, float, float]]] = None,
+    displacement_factor: float = 1,
+    comment: str = "",
+):
     """Write an XYZ format of the given molecule (optionally displaced) to the provided stream/file"""
 
     if not displacement is None:
