@@ -1,5 +1,7 @@
 # normal-mode-exporter
 
+**Note**: This script now lives in the https://github.com/KoehnLab/python-scripts repository.
+
 Python utility for exporting normal modes from quantum chemistry application output to more easily interpretable formats.
 
 Currently supported input formats:
